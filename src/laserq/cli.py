@@ -3,6 +3,8 @@
     laserq status                     estado de la máquina
     laserq settings [--apply]         verifica (y opcionalmente corrige) los $N
     laserq home                       ciclo de homing
+    laserq jog --x 50 --y 30          mueve el cabezal para alinearlo con el material
+    laserq set-origin                 fija la posición actual como (0,0) del próximo job
     laserq testcard --material mdf3   genera la placa de test
     laserq focus-ramp                 genera la rampa de búsqueda de foco
     laserq raster foto.png -w 80      imagen -> G-code
@@ -195,6 +197,24 @@ def cmd_check(args) -> int:
     return 0
 
 
+def cmd_jog(args) -> int:
+    machine = _connect(args)
+    machine.jog(args.x, args.y, relative=args.relative, feed=args.feed)
+    print(machine.status())
+    return 0
+
+
+def cmd_set_origin(args) -> int:
+    machine = _connect(args)
+    if args.clear:
+        machine.clear_origin()
+        print("origen de trabajo borrado, usando coordenadas absolutas de máquina")
+    else:
+        machine.set_origin()
+        print("origen de trabajo fijado en la posición actual del cabezal")
+    return 0
+
+
 def cmd_run(args) -> int:
     lines = Path(args.file).read_text(encoding="ascii", errors="replace").splitlines()
     box = measure(lines)
@@ -302,6 +322,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_settings)
 
     sub.add_parser("home", help="ciclo de homing").set_defaults(func=cmd_home)
+
+    p = sub.add_parser("jog", help="mueve el cabezal sin grabar (alinear con el material)")
+    p.add_argument("--x", type=float, help="X destino en mm")
+    p.add_argument("--y", type=float, help="Y destino en mm")
+    p.add_argument("--rel", dest="relative", action="store_true",
+                   help="mover relativo a la posición actual en vez de absoluto")
+    p.add_argument("--feed", type=float, default=1500.0, help="velocidad de traslado (mm/min)")
+    p.set_defaults(func=cmd_jog)
+
+    p = sub.add_parser(
+        "set-origin",
+        help="fija la posición actual del cabezal como (0,0) del próximo job",
+    )
+    p.add_argument("--clear", action="store_true",
+                   help="volver a coordenadas absolutas de máquina en vez de fijar")
+    p.set_defaults(func=cmd_set_origin)
 
     p = sub.add_parser("testcard", help="genera una placa de test potencia/velocidad")
     p.add_argument("-o", "--out", default="testcard.gcode")

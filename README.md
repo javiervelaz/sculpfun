@@ -64,6 +64,27 @@ laserq check out/mdf.gcode
 laserq run out/mdf.gcode
 ```
 
+## El material no siempre está en el (0,0) absoluto
+
+Todo G-code que genera este proyecto asume que empieza en el origen absoluto
+de máquina, el mismo que deja el homing. Pero esa esquina puede tener un
+final de carrera en el medio, o simplemente no ser donde apoyaste la pieza.
+Si el material no está exactamente ahí, el job graba igual en esa esquina —
+sobre la mesa, no sobre el material.
+
+Para que el (0,0) del archivo coincida con una esquina del material:
+
+```bash
+laserq home                      # origen absoluto, precondición de todo esto
+laserq jog --x 120 --y 80        # alineá el cabezal con la esquina del material
+laserq set-origin                # esa posición pasa a ser el (0,0) del próximo job
+laserq run out/mdf.gcode --no-home   # sin --no-home, un home vuelve a la esquina absoluta y pisa el origen fijado
+```
+
+`set-origin --clear` vuelve a coordenadas absolutas de máquina. El offset
+dura hasta ahí o hasta un reset — no sobrevive a un `home()` posterior sin
+volver a alinearlo.
+
 Todo el CLI funciona sin máquina conectada usando `--fake`, que simula un GRBL
 que responde `ok` a todo. Sirve para probar generadores y la cola.
 
@@ -130,6 +151,8 @@ vendible del sistema.
 | `status` | Estado actual de la máquina |
 | `settings [--apply]` | Verifica y corrige los parámetros `$N` críticos |
 | `home` | Ciclo de homing |
+| `jog --x --y [--rel]` | Mueve el cabezal sin grabar, para alinearlo con el material |
+| `set-origin [--clear]` | Fija la posición actual como (0,0) del próximo job |
 | `testcard` | Placa de test potencia × velocidad |
 | `focus-ramp` | Línea para encontrar el foco |
 | `raster IMG -w 80` | Imagen a G-code con dithering |

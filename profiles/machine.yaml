@@ -2,7 +2,7 @@
 # Todo lo de acá se mide una vez y se versiona.
 
 name: SculpFun S30 Pro Max
-port: /dev/ttyUSB0        # en Windows: COM3
+port: COM5
 baudrate: 115200
 max_power: 1000           # $30
 

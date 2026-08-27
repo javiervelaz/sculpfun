@@ -130,6 +130,56 @@ class Machine:
         """Apaga el láser sin mover nada. Es el primer reflejo ante una duda."""
         self.conn.write_line("M5 S0")
 
+    def jog(
+        self,
+        x: float | None = None,
+        y: float | None = None,
+        *,
+        relative: bool = False,
+        feed: float = 1500.0,
+    ) -> None:
+        """Mueve el cabezal sin grabar, para alinearlo con el material.
+
+        No es un `$J=` de jog en tiempo real (no es cancelable a mitad de
+        camino): es un `G0` común, bloqueante. Alcanza para el único uso que
+        le importa a este proyecto, que es posicionar antes de `set_origin`,
+        no manejar la máquina a mano con las flechas.
+        """
+        if x is None and y is None:
+            return
+        parts = ["G91" if relative else "G90", "G0"]
+        if x is not None:
+            parts.append(f"X{x:g}")
+        if y is not None:
+            parts.append(f"Y{y:g}")
+        parts.append(f"F{feed:g}")
+        send_and_wait(self.conn, " ".join(parts))
+        if relative:
+            send_and_wait(self.conn, "G90")  # no dejar la máquina en modo relativo
+
+    def set_origin(self, x: float = 0.0, y: float = 0.0) -> None:
+        """Fija la posición actual como origen de trabajo (`G92`).
+
+        El caso de uso: el material no está apoyado contra el (0,0) absoluto
+        que dejó el homing (esa esquina puede estar ocupada por un final de
+        carrera, por ejemplo). Se hace `home()`, se alinea el cabezal con
+        `jog()` sobre una esquina del material, y con `set_origin()` ese
+        punto pasa a ser el (0,0) que asume todo G-code generado por este
+        proyecto — sin regenerar ni tocar el archivo.
+
+        El offset dura hasta el próximo reset o `clear_origin()`; NO se
+        borra solo con un homing posterior. Por eso el orden importa: si
+        volvés a homear después de fijar el origen, el cabezal vuelve a la
+        esquina absoluta y el offset queda calculado para una posición que
+        ya no es la actual. Flujo correcto: `home()` -> `jog()` ->
+        `set_origin()` -> `run(..., no_home=True)`.
+        """
+        send_and_wait(self.conn, f"G92 X{x:g} Y{y:g}")
+
+    def clear_origin(self) -> None:
+        """Vuelve a las coordenadas absolutas de máquina (`G92.1`)."""
+        send_and_wait(self.conn, "G92.1")
+
     # ------------------------------------------------------------------ job
 
     def run(
