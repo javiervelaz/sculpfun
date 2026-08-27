@@ -1,0 +1,18 @@
+# PLANTILLA — los valores son un punto de partida razonable, NO están
+# verificados en tu máquina. Corré `laserq testcard` y reemplazalos.
+material: MDF crudo
+thickness_mm: 3.0
+operation: engrave
+speed: 3500
+power: 350
+passes: 1
+line_interval_mm: 0.1
+dither: jarvis
+gamma: 1.6           # la madera oscurece de forma no lineal con la energía
+air_assist: true
+z_offset_mm: 0.0
+notes: >
+  Punto de partida para grabado de fotos sobre MDF crudo. El MDF varía
+  mucho entre lotes y hasta entre planchas: si cambiás de proveedor,
+  rehacé la placa de test antes de una tirada grande.
+verified_on: ""

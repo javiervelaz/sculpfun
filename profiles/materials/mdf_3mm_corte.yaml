@@ -1,0 +1,15 @@
+# PLANTILLA — sin verificar.
+material: MDF crudo
+thickness_mm: 3.0
+operation: cut
+speed: 300
+power: 1000
+passes: 2
+air_assist: true
+z_offset_mm: 0.0
+notes: >
+  Dos pasadas suele dar mejor corte que una lenta: menos carbonizado en el
+  canto porque el aire alcanza a limpiar entre pasadas. Enfocar sobre la
+  superficie, no en el medio del espesor, salvo que midas lo contrario.
+  SIEMPRE con panal debajo y extracción encendida.
+verified_on: ""

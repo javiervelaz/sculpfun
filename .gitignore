@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Cola y salidas
+laserq.db
+laserq.db-wal
+laserq.db-shm
+*.gcode
+out/

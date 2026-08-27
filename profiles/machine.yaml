@@ -1,0 +1,22 @@
+# Configuración de la máquina.
+# Todo lo de acá se mide una vez y se versiona.
+
+name: SculpFun S30 Pro Max
+port: /dev/ttyUSB0        # en Windows: COM3
+baudrate: 115200
+max_power: 1000           # $30
+
+# Área estándar. Con el kit de extensión de Y pasa a [410, 935];
+# con el kit XY completo, a [935, 905].
+work_area_mm: [410, 400]
+
+travel_feed: 6000
+
+# Holgura de las correas para barrido bidireccional. Arranca en 0 y medilo:
+# grabá un bloque denso, mirá si las líneas pares e impares quedan
+# desfasadas, y poné acá la mitad del desfasaje observado.
+backlash_mm: 0.0
+
+has_rotary: true
+rotary_roller_diameter_mm: 15.0
+rotary_steps_per_mm: null   # completar tras correr la calibración de vuelta

@@ -1,0 +1,16 @@
+# PLANTILLA — sin verificar.
+material: Aluminio anodizado negro
+thickness_mm: 1.0
+operation: mark
+speed: 1200
+power: 900
+passes: 1
+line_interval_mm: 0.06
+dither: threshold
+air_assist: true
+notes: >
+  El punto dulce del diodo de 20W: no ablaciona el metal, blanquea la capa
+  anodizada. Contraste excelente y muy rápido. Es el material correcto para
+  chapas de identificación y DataMatrix de trazabilidad.
+  NO sirve sobre aluminio desnudo: ahí el 450nm se refleja casi todo.
+verified_on: ""

@@ -1,0 +1,16 @@
+# PLANTILLA — sin verificar. Perfil de rotativo.
+material: Termo de acero pintado
+operation: mark
+speed: 800
+power: 750
+passes: 1
+line_interval_mm: 0.08
+dither: threshold
+air_assist: true
+notes: >
+  Sobre pintura epoxi: el láser la remueve y deja ver el metal debajo.
+  Bajar la aceleración de Y ($121) a ~200 antes de la tirada: un termo
+  tiene inercia y patina en los rodillos.
+  Limitar el ancho de grabado a la franja de foco (ver `laserq rotary-info`)
+  o partir el diseño en varias franjas rotando entre una y otra.
+verified_on: ""

@@ -1,0 +1,17 @@
+# PLANTILLA — sin verificar.
+material: Cuero curtido vegetal
+thickness_mm: 2.0
+operation: engrave
+speed: 4000
+power: 250
+passes: 1
+line_interval_mm: 0.1
+dither: atkinson     # el cuero satura rápido: conviene más contraste
+gamma: 1.2
+air_assist: true
+notes: >
+  Solo curtido vegetal. El cuero al cromo libera compuestos de cromo
+  hexavalente al quemarse: no se graba, punto. Si no sabés el curtido del
+  material, no lo pongas en la máquina.
+  Extracción al exterior obligatoria, el humo del cuero es agresivo.
+verified_on: ""

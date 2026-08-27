@@ -1,0 +1,17 @@
+# PLANTILLA — sin verificar.
+material: Acero inoxidable 304
+thickness_mm: 1.0
+operation: mark
+speed: 300
+power: 1000
+passes: 3
+line_interval_mm: 0.05
+dither: threshold
+air_assist: false      # el aire enfría y baja el contraste del óxido
+notes: >
+  Marcado por oxidación superficial. Anda, pero lento y con contraste
+  variable según el acabado y la limpieza de la chapa: desengrasar con
+  alcohol antes. Varias pasadas lentas dan mejor resultado que una fuerte.
+  Si necesitás contraste garantizado y repetible, la vía es spray de
+  marcado, no más potencia.
+verified_on: ""
