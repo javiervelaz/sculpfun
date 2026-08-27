@@ -91,6 +91,19 @@ también cambia.
 Cuánto se aleja el cabezal del final de carrera al terminar el ciclo. Si es muy
 chico, cualquier vibración vuelve a disparar el límite y tira `ALARM:1`.
 
+**En esta S30 Pro Max el valor de fábrica (2mm) daba `ALARM:8` de forma
+intermitente** (homing fail: el límite no se liberó al retroceder), en
+~1 de cada 4 ciclos, sin relación con el material ni con el software usado
+para homear — se confirmó mandando `$H` crudo por puerto serie, sin pasar
+por `laserq`. Subirlo a `$27=4` resolvió la intermitencia (5/5 homings
+limpios en la prueba). Sospecha: el switch tiene algo de rebote al
+soltarse y 2mm no le daba margen suficiente para asentar antes de que GRBL
+chequeara si se liberó. Este valor no se persiste en `machine.yaml` — es
+un parámetro de la EEPROM del controlador, no de la config versionada acá.
+Si se reemplaza el controlador o se resetea la EEPROM, hay que volver a
+aplicarlo (`$27=4` por terminal serie, o el equivalente con
+`Machine.apply_settings({27: 4})`).
+
 ## Backlash: no es un parámetro de GRBL
 
 GRBL 1.1 no compensa holgura. En este proyecto se compensa del lado del
