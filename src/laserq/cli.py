@@ -13,6 +13,7 @@
     laserq check archivo.gcode        bounding box y validación sin grabar
     laserq run archivo.gcode          graba un archivo
     laserq queue add|list|work        cola de jobs
+    laserq queue work --no-home       igual, sin homear (rotativo, set-origin)
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from pathlib import Path
 from .driver import Connection, ConnectionConfig, FakeConnection, Machine
 from .driver.machine import REQUIRED_SETTINGS, SETTING_NAMES
 from .gcode.builder import measure
-from .jobs import Job, JobQueue, JobState, Worker
+from .jobs import HOME_POLICIES, Job, JobQueue, JobState, Worker
 from .profiles import list_materials, load_machine, load_material
 
 
@@ -279,8 +280,11 @@ def cmd_queue(args) -> int:
         worker = Worker(
             machine, queue,
             confirm_each=not args.no_confirm,
+            home_policy=args.home,
             work_area=machine_profile.work_area_mm,
         )
+        if args.home == "never":
+            print("sin homing: asegurate de que el origen ya esté donde corresponde")
         stats = worker.run_forever(max_jobs=args.max_jobs)
         print(f"\nlistos={stats.completed} fallados={stats.failed} salteados={stats.skipped}")
         return 0
@@ -408,6 +412,12 @@ def build_parser() -> argparse.ArgumentParser:
     q = qsub.add_parser("work")
     q.add_argument("--no-confirm", action="store_true",
                    help="NO usar sin gabinete cerrado y enclavamiento")
+    q.add_argument("--home", choices=HOME_POLICIES, default="once",
+                   help="once: homea antes del primer job (por defecto). "
+                        "each: antes de cada uno. never: nunca")
+    q.add_argument("--no-home", dest="home", action="store_const", const="never",
+                   help="atajo de --home never. OBLIGATORIO con el rotativo "
+                        "montado y con set-origin")
     q.add_argument("--max-jobs", type=int)
     p.set_defaults(func=cmd_queue)
 

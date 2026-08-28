@@ -19,20 +19,29 @@ pytest
 pytest tests/test_rotary.py
 
 # Run a single test
-pytest tests/test_gcode.py::test_deduplication
+pytest tests/test_gcode.py::test_no_repite_feed_ni_power
 
 # Lint
 ruff check src/
 
 # CLI (real hardware)
 laserq status
-laserq raster image.png --material mdf_3mm_co2
-laserq rotary image.png --material termo_acero_rotativo
+laserq raster image.png --material mdf_3mm_grabado
+laserq rotary-info -d 90 --diameter-end 70 -l 100
+
+# Batch: the queue homes ONCE before the first job by default.
+laserq queue work                 # flat bed
+laserq queue work --no-home       # rotary mounted, or after `set-origin`
 
 # CLI (no hardware — uses FakeConnection)
 laserq --fake status
-laserq --fake raster image.png --material mdf_3mm_co2
+laserq --fake queue work --no-home --no-confirm
 ```
+
+**Not implemented yet** (do not assume these exist): `laserq rotary` (raster
+onto a cone — the inverse mapping `ConeMapping.design_u()` is written but
+unused), SVG import, toolpath ordering. Vector engraving on cones works via
+`ConeMapping.warp_polyline()`; see `examples/lote_desde_csv.py`.
 
 ## Architecture
 
@@ -57,7 +66,7 @@ Generators (laserq.gcode) → Queue (laserq.jobs) → Driver (laserq.driver) →
 
 **`laserq/jobs/`** — Job queue
 - `queue.py`: SQLite persistence, states: PENDING → RUNNING → DONE/FAILED/CANCELLED
-- `worker.py`: Polls queue, executes with operator confirmation; decoupled from CLI so it can be HTTP-fronted later
+- `worker.py`: Polls queue, executes with operator confirmation; decoupled from CLI so it can be HTTP-fronted later. `home_policy` is `"once"` (default) / `"each"` / `"never"` — see below
 
 **`profiles/`** — Versioned configuration (YAML, tracked in git)
 - `machine.yaml`: Port, work area, backlash, rotary roller diameter
@@ -72,11 +81,24 @@ Generators (laserq.gcode) → Queue (laserq.jobs) → Driver (laserq.driver) →
 - `$30=1000`, `$31=0` — power scale 0–1000
 - `$22=1` — homing cycle enabled (required before any job)
 
+**Homing policy (`Worker.home_policy`):** `"once"` homes before the first job
+of a run and again after any failure (`emergency_stop()` soft-resets, so the
+position is no longer trustworthy). `"never"` is **mandatory with the rotary
+mounted** — Y is the roller there, and `$H` would hunt for a limit switch that
+does not exist on that axis — and is also required for the
+`home` → `jog` → `set-origin` workflow, where a later homing invalidates the
+G92 offset.
+
+**Stopping on failure:** `Streamer.run()` calls `abort()` (feed hold, then soft
+reset) before propagating any exception. An `error:N` does not stop GRBL by
+itself — it keeps executing the ~128 bytes already in its buffer with the laser
+on. Never catch a streaming error and let the process exit without that stop.
+
 **G-code conventions:**
 - Always use M4 (dynamic power mode), not M3 — prevents burns at deceleration zones
 - Deduplicate F (feed) and S (power) commands to conserve GRBL's lookahead buffer
 - Backlash compensation happens at generator level (not firmware)
 
-**Testing:** All 51 tests run without hardware. `FakeConnection` replaces serial for full CLI integration testing.
+**Testing:** All 67 tests run without hardware. `FakeConnection` replaces serial for full CLI integration testing.
 
 **Material profiles** use `verified_on` timestamps so calibration history is tracked in git — don't hardcode material settings in source.

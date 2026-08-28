@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from laserq.driver.connection import CMD_FEED_HOLD, CMD_SOFT_RESET, FakeConnection
-from laserq.driver.errors import GrblError
+from laserq.driver.errors import GrblAlarm, GrblError
 from laserq.driver.streamer import RX_USABLE, Streamer, strip_comments
 
 
@@ -128,3 +128,58 @@ def test_abort_hace_feed_hold_antes_del_reset():
     assert conn.realtime[0] == CMD_FEED_HOLD
     assert CMD_SOFT_RESET in conn.realtime
     assert conn.realtime.index(CMD_FEED_HOLD) < conn.realtime.index(CMD_SOFT_RESET)
+
+
+def test_un_error_de_grbl_frena_la_maquina():
+    """Lo que pasa si no: GRBL sigue ejecutando lo que ya tenía en el buffer.
+
+    El `error:N` no detiene nada por sí solo. Sin este feed hold, el láser
+    termina de quemar los ~128 bytes en vuelo mientras el proceso de Python
+    se muere por la excepción.
+    """
+    conn = FakeConnection(error_on={3: 20})
+    conn.open()
+
+    with pytest.raises(GrblError):
+        Streamer(conn).run(["G21", "G90", "M4S0", "G1X10", "G1X20"])
+
+    assert CMD_FEED_HOLD in conn.realtime
+    assert CMD_SOFT_RESET in conn.realtime
+    assert conn.realtime.index(CMD_FEED_HOLD) < conn.realtime.index(CMD_SOFT_RESET)
+
+
+class AlarmingConnection(FakeConnection):
+    """GRBL entra en alarma a mitad de job (un soft limit, por ejemplo)."""
+
+    def __init__(self, alarm_after: int, code: int = 2):
+        super().__init__()
+        self.alarm_after = alarm_after
+        self.code = code
+
+    def write_line(self, line: str) -> int:
+        index = len(self.sent)
+        self.sent.append(line.strip())
+        self._pending.append(f"ALARM:{self.code}" if index == self.alarm_after else "ok")
+        return len(line.strip()) + 1
+
+
+def test_una_alarma_tambien_frena_la_maquina():
+    conn = AlarmingConnection(alarm_after=2)
+    conn.open()
+
+    with pytest.raises(GrblAlarm):
+        Streamer(conn).run(["G21", "G90", "G1X10", "G1X20"])
+
+    assert CMD_FEED_HOLD in conn.realtime
+    assert CMD_SOFT_RESET in conn.realtime
+
+
+def test_un_job_limpio_no_manda_ningun_freno():
+    """La red de seguridad no se dispara sola: sería un reset por job."""
+    conn = FakeConnection()
+    conn.open()
+
+    Streamer(conn).run([f"G1X{i}" for i in range(20)])
+
+    assert CMD_FEED_HOLD not in conn.realtime
+    assert CMD_SOFT_RESET not in conn.realtime

@@ -35,7 +35,7 @@ G-code y lo graba al mismo tiempo.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                      # 51 tests, ninguno necesita hardware
+pytest                      # 67 tests, ninguno necesita hardware
 ```
 
 En Linux hay que estar en el grupo del puerto serie, o cada comando falla con
@@ -83,7 +83,7 @@ laserq run out/mdf.gcode --no-home   # sin --no-home, un home vuelve a la esquin
 
 `set-origin --clear` vuelve a coordenadas absolutas de máquina. El offset
 dura hasta ahí o hasta un reset — no sobrevive a un `home()` posterior sin
-volver a alinearlo.
+volver a alinearlo. Por eso la cola también acepta `--no-home` (ver Lotes).
 
 Todo el CLI funciona sin máquina conectada usando `--fake`, que simula un GRBL
 que responde `ok` a todo. Sirve para probar generadores y la cola.
@@ -138,11 +138,28 @@ una vuelta: π × D.
 python examples/lote_desde_csv.py nombres.csv \
     --diametro 90 --diametro-tope 70 --largo 90 --encolar
 laserq queue list
-laserq queue work
+laserq queue work --no-home        # rotativo montado: ver abajo
 ```
 
 De un CSV a N piezas únicas sin abrir un editor. Este es el primer producto
 vendible del sistema.
+
+### Homing en una tirada
+
+Por defecto la cola homea **una sola vez**, antes del primer job, y vuelve a
+homear después de cualquier falla (un `emergency_stop()` hace soft reset, así
+que la posición deja de ser confiable). Cincuenta termos no necesitan cincuenta
+ciclos de homing.
+
+| Modo | Cuándo |
+|---|---|
+| `--home once` (por defecto) | Mesa plana, tirada normal |
+| `--home each` | Si entre pieza y pieza alguien mueve el cabezal a mano |
+| `--no-home` (`--home never`) | **Rotativo montado**, o después de `set-origin` |
+
+`--no-home` no es una optimización: con el rotativo, Y deja de ser la mesa y
+pasa a ser el rodillo, así que un `$H` sale a buscar un final de carrera que en
+ese eje no existe y el objeto gira hasta que alguien corta.
 
 ## Comandos
 
@@ -161,6 +178,7 @@ vendible del sistema.
 | `check F.gcode` | Bounding box y validación sin grabar |
 | `run F.gcode` | Graba un archivo |
 | `queue add\|list\|work` | Cola de jobs |
+| `queue work --no-home` | Igual, sin homear (rotativo, `set-origin`) |
 | `materials` | Lista los perfiles y cuáles están sin verificar |
 
 ## Seguridad
@@ -182,10 +200,21 @@ El módulo láser de la S30 Pro Max es **clase 4**. No es una formalidad legal:
 `laserq queue work --no-confirm` ejecuta la cola sin pedir confirmación por
 pieza. **No usarlo sin gabinete cerrado, extracción y enclavamiento de puerta.**
 
+Del lado del software, cualquier falla durante el streaming (un `error:N`, una
+alarma, una excepción cualquiera) hace feed hold y después soft reset antes de
+propagar el error. Hace falta porque un `error:N` no detiene nada por sí solo:
+GRBL sigue ejecutando los ~128 bytes que ya tenía en el buffer, con el láser
+encendido. Sigue sin reemplazar al interruptor físico.
+
 ## Estado
 
 Esqueleto funcional con la parte crítica cubierta por tests. Falta:
 
+- Raster sobre cónico (`laserq rotary`): el mapeo inverso `ConeMapping.design_u()`
+  está escrito y todavía no lo usa nadie. Vectores sobre cónico sí funcionan.
+- `passes`, `air_assist` y `backlash_mm` de los perfiles no llegan al G-code
+- `queue cancel` / `queue requeue` existen en `JobQueue` y no en el CLI
+- `check` no conoce el offset de `set-origin`
 - Importación de SVG (hoy solo hay tipografía de trazo)
 - Optimización del orden de recorrido (el preview ya reporta la métrica)
 - Alineación asistida por cámara con OpenCV

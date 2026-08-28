@@ -153,7 +153,23 @@ class Streamer:
 
         Levanta GrblError si una línea fue rechazada, GrblAlarm si la
         máquina entró en alarma, o JobAborted si se llamó a abort().
+
+        **Ante cualquier falla frena la máquina antes de propagar el error.**
+        Un `error:N` a mitad de job no detiene nada por sí solo: GRBL sigue
+        ejecutando los ~128 bytes que ya tenía en el buffer, con el láser
+        encendido, mientras el proceso de Python se muere por la excepción.
+        Frenar acá y no en cada llamador es lo único que garantiza que
+        `laserq run` y el worker se comporten igual.
         """
+        try:
+            return self._stream(lines, total=total)
+        except JobAborted:
+            raise  # abort() ya frenó la máquina
+        except BaseException:
+            self.abort()
+            raise
+
+    def _stream(self, lines: Iterable[str], *, total: int | None = None) -> Progress:
         if total is None and isinstance(lines, Sequence):
             total = len(lines)
 

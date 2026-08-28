@@ -9,6 +9,24 @@ Modo desatendido (más adelante): `confirm_each=False` más un enclavamiento
 físico. No lo pongas en False hasta tener gabinete cerrado, extracción y
 un interruptor de puerta cableado, porque en ese modo la máquina enciende
 20W sin que nadie esté mirando.
+
+Homing (`home_policy`)
+----------------------
+* ``"once"`` (por defecto): homea una sola vez, antes del primer job de la
+  tirada. Es lo correcto en mesa plana: el origen absoluto no se mueve
+  entre pieza y pieza, así que 50 termos no necesitan 50 ciclos de homing.
+* ``"each"``: homea antes de cada job. Solo tiene sentido si entre piezas
+  alguien mueve el cabezal a mano.
+* ``"never"``: no homea nunca. **Es obligatorio con el rotativo montado**,
+  porque ahí Y deja de ser la mesa y pasa a ser el rodillo: un `$H` sale a
+  buscar un final de carrera que en ese eje no existe. También es lo que
+  hace falta para el flujo `home` -> `jog` -> `set-origin`, donde un homing
+  posterior manda el cabezal a la esquina absoluta y deja el offset de G92
+  calculado para una posición que ya no es la actual.
+
+Después de un job fallado la posición no es confiable (`emergency_stop()`
+hace soft reset), así que el worker se marca a sí mismo como "sin homear"
+y vuelve a homear antes del próximo, salvo con ``"never"``.
 """
 
 from __future__ import annotations
@@ -24,6 +42,9 @@ from ..gcode.builder import measure
 from .queue import Job, JobQueue
 
 ConfirmFn = Callable[[Job, str], bool]
+
+#: Ver el docstring del módulo. "never" es el modo rotativo.
+HOME_POLICIES = ("once", "each", "never")
 
 
 def _default_confirm(job: Job, summary: str) -> bool:
@@ -48,16 +69,29 @@ class Worker:
         *,
         confirm_each: bool = True,
         confirm_fn: ConfirmFn | None = None,
-        home_before_each: bool = True,
+        home_policy: str = "once",
         work_area: tuple[float, float] | None = None,
     ):
+        if home_policy not in HOME_POLICIES:
+            raise ValueError(
+                f"home_policy invalido: {home_policy!r}. "
+                f"Opciones: {', '.join(HOME_POLICIES)}"
+            )
         self.machine = machine
         self.queue = queue
         self.confirm_each = confirm_each
         self.confirm_fn = confirm_fn or _default_confirm
-        self.home_before_each = home_before_each
+        self.home_policy = home_policy
         self.work_area = work_area
         self.stats = WorkerStats()
+        self._homed = False
+
+    def _needs_home(self) -> bool:
+        if self.home_policy == "never":
+            return False
+        if self.home_policy == "each":
+            return True
+        return not self._homed
 
     def run_forever(self, poll_interval: float = 2.0, max_jobs: int | None = None) -> WorkerStats:
         recovered = self.queue.recover_stale()
@@ -104,8 +138,9 @@ class Worker:
             return
 
         try:
-            if self.home_before_each:
+            if self._needs_home():
                 self.machine.home()
+                self._homed = True
 
             def on_progress(progress) -> None:
                 if job.id is not None:
@@ -130,12 +165,14 @@ class Worker:
             print(f"job #{job.id} listo en {progress.elapsed / 60:.1f} min")
 
         except JobAborted:
+            self._homed = False  # abort() hizo soft reset: posición perdida
             self.machine.laser_off()
             self.queue.finish(job.id, error="cortado por el operador")
             self.stats.failed += 1
             print(f"\njob #{job.id} cortado. La máquina necesita homing antes de seguir.")
             raise
         except (GrblError, GrblAlarm, LaserqError) as exc:
+            self._homed = False  # emergency_stop() hace soft reset
             self.machine.emergency_stop()
             self.queue.finish(job.id, error=str(exc))
             self.stats.failed += 1
