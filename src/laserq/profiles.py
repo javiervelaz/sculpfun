@@ -31,6 +31,11 @@ class MaterialProfile:
     dither: str = "jarvis"
     gamma: float = 1.0
     air_assist: bool = True
+    #: Ancho del canal que se come el láser al cortar, en mm. Se mide una vez
+    #: por material y espesor con `laserq kerf-comb`, y de ahí en más el
+    #: generador compensa solo: las ranuras salen más angostas que la medida
+    #: final y las piezas más anchas. Es lo que decide si un encastre encastra.
+    kerf_mm: float = 0.0
     focus_offset_mm: float = 0.0
     #: Milímetros a levantar el material desde la mesa (panal, calzas).
     z_offset_mm: float = 0.0

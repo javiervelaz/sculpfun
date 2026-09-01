@@ -1,15 +1,30 @@
-# PLANTILLA — sin verificar.
+# PLANTILLA — sin verificar. Es el material del primer producto (soporte
+# para notebook de dos piezas encastradas), así que este es el perfil que
+# más conviene tener medido de verdad.
+#
+# Orden para completarlo:
+#   1. laserq cut-test -m mdf_3mm_corte  -> speed y passes
+#      (la celda más rápida que atraviesa limpio)
+#   2. calibre sobre la plancha -> thickness_mm real
+#      (el MDF de "3mm" suele andar entre 2.7 y 3.2, y varía entre planchas)
+#   3. laserq kerf-comb -m mdf_3mm_corte -t <lo que midió el calibre>
+#      -> kerf_mm
 material: MDF crudo
-thickness_mm: 3.0
+thickness_mm: 3.0        # MEDIR con calibre y corregir
 operation: cut
 speed: 300
 power: 1000
 passes: 2
+kerf_mm: 0.0             # 0 = sin compensar. Correr kerf-comb antes de producir.
 air_assist: true
 z_offset_mm: 0.0
 notes: >
   Dos pasadas suele dar mejor corte que una lenta: menos carbonizado en el
   canto porque el aire alcanza a limpiar entre pasadas. Enfocar sobre la
   superficie, no en el medio del espesor, salvo que midas lo contrario.
-  SIEMPRE con panal debajo y extracción encendida.
+  SIEMPRE con panal debajo y extracción encendida: el humo del MDF lleva
+  resinas de urea-formaldehído.
+  Para producto: el canto queda negro y mancha las manos. Cinta de papel
+  sobre la cara visible antes de cortar, y sellador o lija fina en el canto
+  después. Es parte del costo de la pieza, no un detalle.
 verified_on: ""

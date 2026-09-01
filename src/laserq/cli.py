@@ -7,6 +7,8 @@
     laserq set-origin                 fija la posición actual como (0,0) del próximo job
     laserq testcard --material mdf3   genera la placa de test
     laserq focus-ramp                 genera la rampa de búsqueda de foco
+    laserq cut-test                   placa de corte: pasadas x velocidad
+    laserq kerf-comb -t 5.8           peine para medir el kerf del material
     laserq raster foto.png -w 80      imagen -> G-code
     laserq rotary-info -d 80          números del rotativo para un objeto
     laserq preview archivo.gcode      dibuja el recorrido a PNG
@@ -108,6 +110,84 @@ def cmd_focus_ramp(args) -> int:
     program.save(args.out)
     print(f"{args.out}: {len(program)} líneas")
     print("apoyá la pieza inclinada con un desnivel conocido a lo largo de la línea")
+    return 0
+
+
+def cmd_cut_test(args) -> int:
+    from .calibration.cutcard import CutTestSpec, build_cut_test
+
+    spec = CutTestSpec()
+    label = args.material or ""
+    thickness = None
+    if args.material:
+        try:
+            profile = load_material(args.material, args.profiles)
+        except FileNotFoundError:
+            profile = None  # no es un perfil: se usa como etiqueta y listo
+        if profile is not None:
+            label = profile.material or profile.name
+            thickness = profile.thickness_mm
+            spec.power = profile.power
+
+    if args.passes:
+        spec.passes = [int(v) for v in args.passes.split(",")]
+    if args.speeds:
+        spec.speeds = [int(v) for v in args.speeds.split(",")]
+    if args.power:
+        spec.power = args.power
+
+    program = build_cut_test(spec, material=label)
+    width, height = spec.total_size
+    program.save(args.out)
+    print(f"{args.out}: {len(program)} líneas, placa de ~{width + 30:.0f}x{height + 20:.0f} mm")
+    print(f"pasadas {spec.passes} x velocidades {spec.speeds} a S{spec.power}")
+    if thickness and thickness > 4.0 and not args.passes:
+        print()
+        print(f"OJO: {thickness:g} mm con los rangos por defecto puede no atravesar en")
+        print("ninguna celda. Probá --passes 3,4,5,6 --speeds 100,150,250,400")
+    print()
+    print("cortala, dá vuelta la plancha y mirá de atrás: las líneas que se ven")
+    print("atravesaron. Cargá en el perfil la celda más rápida que atraviesa limpio.")
+    return 0
+
+
+def cmd_kerf_comb(args) -> int:
+    from .calibration.cutcard import KerfCombSpec, build_kerf_comb
+    from .gcode.cut import CutOptions
+
+    if args.material:
+        profile = load_material(args.material, args.profiles)
+        options = CutOptions.from_profile(profile)
+        thickness = args.thickness or profile.thickness_mm
+        print(f"usando perfil {profile.name}: F{options.speed} S{options.power} "
+              f"x{options.passes} pasadas")
+        if not profile.verified_on:
+            print("OJO: ese perfil está SIN VERIFICAR. Corré `laserq cut-test` primero,")
+            print("o el peine puede salir sin atravesar y no vas a poder medir nada.")
+    else:
+        options = CutOptions(speed=args.speed, power=args.power, passes=args.cut_passes)
+        thickness = args.thickness
+
+    if not thickness:
+        print("hace falta el espesor: -t 5.8 (medilo con calibre, no uses el nominal)")
+        return 1
+
+    spec = KerfCombSpec(thickness_mm=thickness)
+    if args.span:
+        spec.span_mm = args.span
+    if args.step:
+        spec.step_mm = args.step
+
+    program = build_kerf_comb(spec, options)
+    width, height = spec.total_size
+    program.save(args.out)
+    widths = spec.widths
+    print(f"{args.out}: {len(program)} líneas, peine de ~{width + 20:.0f}x{height + 20:.0f} mm")
+    print(f"{len(widths)} ranuras de {widths[0]:g} a {widths[-1]:g} mm, paso {spec.step_mm:g}")
+    print()
+    print("probá la galga en cada ranura. La que entra con presión de mano y sin")
+    print(f"juego es la buena, y ahí: kerf = {thickness:g} - ancho de esa ranura.")
+    print("Ese número va a kerf_mm en el perfil del material.")
     return 0
 
 
@@ -357,6 +437,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--power", type=int, default=500)
     p.add_argument("--speed", type=int, default=2000)
     p.set_defaults(func=cmd_focus_ramp)
+
+    p = sub.add_parser("cut-test", help="placa de corte: pasadas x velocidad")
+    p.add_argument("-o", "--out", default="cut-test.gcode")
+    p.add_argument("-m", "--material",
+                   help="perfil de material (toma la potencia y el espesor), "
+                        "o un texto suelto para el encabezado")
+    p.add_argument("--passes", help="filas, ej: 1,2,3,4")
+    p.add_argument("--speeds", help="columnas en mm/min, ej: 100,200,300,450,600")
+    p.add_argument("--power", type=int, help="potencia fija (por defecto 1000)")
+    p.set_defaults(func=cmd_cut_test)
+
+    p = sub.add_parser("kerf-comb", help="peine para medir el kerf de un material")
+    p.add_argument("-o", "--out", default="kerf-comb.gcode")
+    p.add_argument("-t", "--thickness", type=float,
+                   help="espesor MEDIDO CON CALIBRE en mm, no el nominal")
+    p.add_argument("-m", "--material", help="perfil de corte a usar")
+    p.add_argument("--span", type=float, help="barrido a cada lado del espesor (0.30)")
+    p.add_argument("--step", type=float, help="paso entre ranuras (0.05)")
+    p.add_argument("--speed", type=int, default=250, help="si no usás un perfil")
+    p.add_argument("--power", type=int, default=1000, help="si no usás un perfil")
+    p.add_argument("--cut-passes", type=int, default=4, help="si no usás un perfil")
+    p.set_defaults(func=cmd_kerf_comb)
 
     p = sub.add_parser("raster", help="imagen -> G-code")
     p.add_argument("image")

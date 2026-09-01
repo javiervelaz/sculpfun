@@ -1,0 +1,25 @@
+# PLANTILLA — sin verificar. Es el material del primer producto (soporte
+# para notebook de dos piezas encastradas), así que este es el perfil que
+# más conviene tener medido de verdad.
+#
+# Orden para completarlo:
+#   1. laserq cut-test  -> speed y passes (la celda más rápida que atraviesa)
+#   2. calibre sobre la plancha -> thickness_mm real (un "6mm" nunca mide 6.00)
+#   3. laserq kerf-comb -> kerf_mm
+material: Multilaminado (plywood)
+thickness_mm: 6.0        # MEDIR con calibre y corregir: casi nunca es 6.00
+operation: cut
+speed: 250
+power: 1000
+passes: 4
+kerf_mm: 0.0             # 0 = sin compensar. Correr kerf-comb antes de producir.
+air_assist: true
+z_offset_mm: 0.0
+notes: >
+  Corta bastante mejor que el MDF del mismo espesor: menos denso y sin resina
+  de urea-formaldehído. A cambio, las líneas de cola entre chapas queman
+  distinto que la madera y el canto sale con bandas.
+  SIEMPRE con panal debajo y extracción encendida: 4 pasadas sobre 6 mm es
+  mucho tiempo de llama potencial en un mismo punto.
+  Enfocar sobre la superficie, no en el medio del espesor.
+verified_on: ""

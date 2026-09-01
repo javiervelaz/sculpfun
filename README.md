@@ -35,7 +35,7 @@ G-code y lo graba al mismo tiempo.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                      # 67 tests, ninguno necesita hardware
+pytest                      # 86 tests, ninguno necesita hardware
 ```
 
 En Linux hay que estar en el grupo del puerto serie, o cada comando falla con
@@ -104,6 +104,60 @@ inclinada, y el punto más fino y oscuro es la distancia focal correcta. Con foc
 manual como el de la S30, este truco ahorra mucho tiempo cada vez que cambiás
 de espesor.
 
+## Corte
+
+Cortar no es grabar con otros números. Necesita tres cosas más, y las tres
+deciden si la pieza sirve:
+
+* **Multipasada.** Un diodo no atraviesa 6 mm de una. `passes` del perfil se
+  aplica contorno por contorno, no repitiendo el programa entero: el material
+  ya está caliente y el aire ya está soplando en esa ranura.
+* **Kerf.** El láser no corta *sobre* la línea, se come un canal centrado en
+  ella. Una ranura dibujada de 6.0 queda de 6.0 + kerf y una pieza dibujada de
+  6.0 queda de 6.0 - kerf. Por eso las ranuras se dibujan **más angostas** que
+  la medida final y las piezas **más anchas**.
+* **Orden.** Los interiores antes que el contorno. Al revés, la pieza se suelta
+  cuando termina el perímetro y las ranuras que faltan salen corridas.
+
+### Calibrar antes de cortar nada vendible
+
+```bash
+# 1. ¿Con qué velocidad y cuántas pasadas atraviesa?
+laserq cut-test -o out/cut-test.gcode -m mdf_3mm_corte
+laserq preview out/cut-test.gcode -o out/cut-test.png
+laserq run out/cut-test.gcode
+```
+
+Los rangos por defecto (1-4 pasadas, 200-800 mm/min) están pensados para
+material fino. Para 6 mm o más:
+`laserq cut-test --passes 3,4,5,6 --speeds 100,150,250,400`.
+
+Se corta, se da vuelta la plancha y se mira de atrás: las líneas que se ven
+atravesaron. La celda más rápida que atraviesa limpio va al perfil.
+
+```bash
+# 2. ¿Cuánto se come el láser? (con el perfil ya cargado del paso 1)
+laserq kerf-comb -o out/kerf-comb.gcode -m mdf_3mm_corte -t 2.9
+```
+
+`-t` es el espesor **medido con calibre**, no el nominal. El MDF de "3 mm"
+anda entre 2.7 y 3.2 y cambia de plancha a plancha; si centrás el barrido en
+3.00 se te puede ir todo el peine para un lado. Es el mismo número que después
+va a definir todas las ranuras del producto, así que vale medirlo bien.
+
+El peine corta ranuras de ancho creciente en pasos de 0.05 mm más una galga de
+la misma plancha. Probás la galga en cada ranura; la que entra con presión de
+mano y sin juego te da el número:
+
+```
+kerf = espesor medido con calibre - ancho nominal de esa ranura
+```
+
+Ese valor va a `kerf_mm` en el perfil y de ahí en más el generador compensa
+solo. **El peine se corta sin compensar**: es la única pieza del sistema donde
+eso es correcto, porque compensar con un kerf que todavía no conocés sería
+medir tu propia suposición.
+
 ## Rotativo
 
 ```bash
@@ -170,7 +224,9 @@ ese eje no existe y el objeto gira hasta que alguien corta.
 | `home` | Ciclo de homing |
 | `jog --x --y [--rel]` | Mueve el cabezal sin grabar, para alinearlo con el material |
 | `set-origin [--clear]` | Fija la posición actual como (0,0) del próximo job |
-| `testcard` | Placa de test potencia × velocidad |
+| `testcard` | Placa de test potencia × velocidad (grabado) |
+| `cut-test` | Placa de corte: pasadas × velocidad |
+| `kerf-comb -t 5.8` | Peine para medir el kerf de un material |
 | `focus-ramp` | Línea para encontrar el foco |
 | `raster IMG -w 80` | Imagen a G-code con dithering |
 | `rotary-info -d 90` | Números del rotativo para un objeto |
@@ -212,7 +268,10 @@ Esqueleto funcional con la parte crítica cubierta por tests. Falta:
 
 - Raster sobre cónico (`laserq rotary`): el mapeo inverso `ConeMapping.design_u()`
   está escrito y todavía no lo usa nadie. Vectores sobre cónico sí funcionan.
-- `passes`, `air_assist` y `backlash_mm` de los perfiles no llegan al G-code
+- `air_assist` y `backlash_mm` de los perfiles no llegan al G-code
+  (`passes` ya sí, en el camino de corte)
+- Compensación de kerf solo para rectángulos: falta el offset de polígonos
+  arbitrarios, que hace falta el día que entre SVG
 - `queue cancel` / `queue requeue` existen en `JobQueue` y no en el CLI
 - `check` no conoce el offset de `set-origin`
 - Importación de SVG (hoy solo hay tipografía de trazo)

@@ -27,6 +27,8 @@ ruff check src/
 # CLI (real hardware)
 laserq status
 laserq raster image.png --material mdf_3mm_grabado
+laserq cut-test -m mdf_3mm_corte      # defaults suit thin stock (1-4 passes)
+laserq kerf-comb -m mdf_3mm_corte -t 2.9   # -t is CALIPER-measured, not nominal
 laserq rotary-info -d 90 --diameter-end 70 -l 100
 
 # Batch: the queue homes ONCE before the first job by default.
@@ -37,6 +39,12 @@ laserq queue work --no-home       # rotary mounted, or after `set-origin`
 laserq --fake status
 laserq --fake queue work --no-home --no-confirm
 ```
+
+**Cutting workflow** (first product is a two-piece slot-together laptop stand
+in 3mm MDF): `laserq cut-test` finds speed and pass count, then
+`laserq kerf-comb -t <measured thickness>` measures kerf. Both values go into
+the material profile; the generator compensates from there. The comb is cut
+**without** kerf compensation on purpose — it is what is being measured.
 
 **Not implemented yet** (do not assume these exist): `laserq rotary` (raster
 onto a cone — the inverse mapping `ConeMapping.design_u()` is written but
@@ -63,6 +71,7 @@ Generators (laserq.gcode) → Queue (laserq.jobs) → Driver (laserq.driver) →
 - `raster.py`: Image → G-code with Jarvis dithering
 - `rotary.py`: Conical mapping (`ConeMapping.warp_polyline()`) — arc-length-preserving geometry for text/images on tapered objects
 - `builder.py`: G-code program assembly with F/S deduplication
+- `cut.py`: cutting — multi-pass per contour, kerf compensation (`HOLE` shrinks the path, `PART` grows it), and interiors-before-outline ordering. Contour roles are **declared, not inferred**; containment detection belongs here when SVG import lands
 
 **`laserq/jobs/`** — Job queue
 - `queue.py`: SQLite persistence, states: PENDING → RUNNING → DONE/FAILED/CANCELLED
@@ -99,6 +108,6 @@ on. Never catch a streaming error and let the process exit without that stop.
 - Deduplicate F (feed) and S (power) commands to conserve GRBL's lookahead buffer
 - Backlash compensation happens at generator level (not firmware)
 
-**Testing:** All 67 tests run without hardware. `FakeConnection` replaces serial for full CLI integration testing.
+**Testing:** All 86 tests run without hardware. `FakeConnection` replaces serial for full CLI integration testing.
 
 **Material profiles** use `verified_on` timestamps so calibration history is tracked in git — don't hardcode material settings in source.
