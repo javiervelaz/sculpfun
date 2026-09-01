@@ -31,6 +31,11 @@ class MaterialProfile:
     dither: str = "jarvis"
     gamma: float = 1.0
     air_assist: bool = True
+    #: Ancho agregado al trazo al grabar texto, en mm. Va acá y no en el
+    #: comando porque es parte de la misma calibración que la velocidad: el
+    #: par (velocidad, grosor) se mide junto con `laserq letter-test` y no
+    #: tiene sentido separado. 0 = trazo pelado de la fuente.
+    grosor_mm: float = 0.0
     #: Ancho del canal que se come el láser al cortar, en mm. Se mide una vez
     #: por material y espesor con `laserq kerf-comb`, y de ahí en más el
     #: generador compensa solo: las ranuras salen más angostas que la medida

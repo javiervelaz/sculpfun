@@ -35,7 +35,7 @@ G-code y lo graba al mismo tiempo.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                      # 86 tests, ninguno necesita hardware
+pytest                      # 119 tests, ninguno necesita hardware
 ```
 
 En Linux hay que estar en el grupo del puerto serie, o cada comando falla con
@@ -158,6 +158,85 @@ solo. **El peine se corta sin compensar**: es la única pieza del sistema donde
 eso es correcto, porque compensar con un kerf que todavía no conocés sería
 medir tu propia suposición.
 
+## El primer producto: soporte de notebook
+
+```bash
+laserq soporte --nombre "Javi"                  # alto, con teclado externo
+laserq soporte --preset bajo --nombre "Javi"    # bajo, para tipear encima
+laserq preview out/soporte.gcode -o out/soporte.png
+laserq check out/soporte.gcode
+laserq run out/soporte.gcode --no-home
+```
+
+Dos piezas que se cruzan a 90° con una muesca a media altura. Con dos piezas
+planas es la única forma de que se sostengan solas: cualquier disposición en
+paralelo necesita un tercer elemento.
+
+* **T (transversal)**: rectángulo, la muesca baja desde el canto de arriba.
+  Se ve de frente y lleva el nombre grabado.
+* **L (longitudinal)**: canto superior inclinado, la muesca sube desde la base.
+  Es la que da el ángulo, y lleva la firma.
+
+Lo que hace que funcione es que el tope de la T queda **al ras** del canto
+inclinado de la L justo en el cruce: la notebook apoya sobre dos líneas que se
+cortan y queda firme en los dos ejes. Un milímetro de más en la T y se hamaca.
+
+Todo sale de parámetros y nada está escrito en el código:
+
+```bash
+laserq soporte --ancho 300 --fondo 220 --altura 100 --angulo 15 \
+               --nombre "Martín" --marca "CounterLabs"
+laserq soporte --espesor 2.83        # plancha de otro lote, remedida
+laserq soporte --sin-pasa-cables --sin-marca
+```
+
+`--espesor` está aparte a propósito: el MDF varía entre planchas más de lo que
+uno espera, y 0.2 mm de más es un encastre que baila. Si comprás otro lote,
+medí y pasalo.
+
+### Detalles que no son detalles
+
+**Primero graba, después corta.** Una pieza recién cortada está suelta sobre el
+panal; grabar después es pasar el cabezal sobre algo que se puede mover. El
+generador emite todo el grabado antes que el primer corte y lo deja escrito en
+el encabezado del G-code.
+
+**Alivio en la raíz de cada muesca.** Un círculo de 3.5 mm en el fondo. Saca el
+esquinero interno vivo, que en MDF es por donde arranca la fisura, y le da lugar
+al radio que el láser deja en el canto de la otra pieza para que asiente hasta
+el fondo.
+
+**El nombre va en un ala, no en el medio.** El centro de la T es exactamente
+donde se para la L: grabado ahí, el texto queda partido al medio y tapado. Se
+descubre mirando la primera pieza armada, no un preview. `--nombre-lado izq|der`.
+
+**El texto se autoescala.** Si no entra a 20 mm de alto, baja hasta 8 antes de
+salirse. Un "Ana" sale grande y un "Guadalupe" un poco más chico, pero los dos
+salen centrados y completos.
+
+**Dónde viven los valores de las letras.** En un perfil de material propio,
+`mdf_3mm_texto`, separado del de relleno. La velocidad y el grosor se miden
+juntos en la misma placa, así que viven juntos:
+
+```yaml
+speed: 1000        # columna de la placa de letras
+power: 600
+grosor_mm: 0.4     # fila de la placa de letras
+```
+
+`laserq soporte` lo lee por defecto; `--grabado otro_perfil` y `--grosor N` lo
+pisan para una corrida suelta.
+
+**El trazo necesita grosor.** La fuente es de trazo único: sin `--grosor` la
+letra sale del ancho del kerf y casi no se lee. `--grosor 0.3` repite el
+recorrido en cruz y le da cuerpo. Cuánto hace falta se mide con
+`laserq letter-test`, que **no** se puede deducir de la placa de relleno: en
+una celda rellena el calor de una línea oscurece a la de al lado, y un trazo
+suelto no tiene vecinos que lo ayuden.
+
+**Fieltro en los apoyos.** La notebook va a apoyar sobre cantos de 3 mm. Cuatro
+fieltros autoadhesivos cuestan centavos y son la diferencia con una tapa rayada.
+
 ## Rotativo
 
 ```bash
@@ -227,6 +306,8 @@ ese eje no existe y el objeto gira hasta que alguien corta.
 | `testcard` | Placa de test potencia × velocidad (grabado) |
 | `cut-test` | Placa de corte: pasadas × velocidad |
 | `kerf-comb -t 5.8` | Peine para medir el kerf de un material |
+| `soporte --nombre "Javi"` | Soporte de notebook de dos piezas encastradas |
+| `letter-test` | Placa para calibrar el grabado de texto |
 | `focus-ramp` | Línea para encontrar el foco |
 | `raster IMG -w 80` | Imagen a G-code con dithering |
 | `rotary-info -d 90` | Números del rotativo para un objeto |
@@ -270,8 +351,7 @@ Esqueleto funcional con la parte crítica cubierta por tests. Falta:
   está escrito y todavía no lo usa nadie. Vectores sobre cónico sí funcionan.
 - `air_assist` y `backlash_mm` de los perfiles no llegan al G-code
   (`passes` ya sí, en el camino de corte)
-- Compensación de kerf solo para rectángulos: falta el offset de polígonos
-  arbitrarios, que hace falta el día que entre SVG
+- Optimización del orden de recorrido dentro de una pieza
 - `queue cancel` / `queue requeue` existen en `JobQueue` y no en el CLI
 - `check` no conoce el offset de `set-origin`
 - Importación de SVG (hoy solo hay tipografía de trazo)

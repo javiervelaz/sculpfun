@@ -38,6 +38,7 @@ habrá que deducirlo por contención, y ese cálculo va en este módulo.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .builder import GcodeProgram
@@ -162,3 +163,152 @@ def cut_contours(
                 closed=contour.closed,
             )
     return program
+
+
+# ------------------------------------------------------- offset de polígonos
+
+
+def signed_area(points: list[Point]) -> float:
+    """Área con signo. Positiva si el polígono está en sentido antihorario."""
+    total = 0.0
+    count = len(points)
+    for index in range(count):
+        x0, y0 = points[index]
+        x1, y1 = points[(index + 1) % count]
+        total += x0 * y1 - x1 * y0
+    return total / 2.0
+
+
+def offset_polygon(points: list[Point], distance: float) -> list[Point]:
+    """Desplaza cada lado del polígono `distance` mm hacia afuera del material.
+
+    Es la generalización de `compensated_rect` a cualquier contorno cerrado,
+    y es lo que permite compensar el kerf en una pieza con muescas: basta con
+    correr **todo** el borde del material hacia afuera. Donde el borde encierra
+    material (el perímetro) eso lo agranda; donde encierra vacío (una muesca,
+    una ranura abierta a un canto) el mismo desplazamiento lo angosta, que es
+    justo lo que hace falta. Un solo signo para toda la pieza.
+
+    `distance` positivo agranda, negativo achica. Para cortar:
+
+        perímetro de la pieza (PART)  ->  +kerf/2
+        agujero interior (HOLE)       ->  -kerf/2
+
+    Los lados casi paralelos no generan vértice y se dejan como están: con los
+    desplazamientos de este proyecto (décimas de milímetro) no hay recorte que
+    valga la pena.
+    """
+    pts = list(points)
+    if len(pts) > 2 and math.isclose(pts[0][0], pts[-1][0], abs_tol=1e-9) \
+            and math.isclose(pts[0][1], pts[-1][1], abs_tol=1e-9):
+        pts = pts[:-1]
+    if len(pts) < 3:
+        raise ValueError("hacen falta al menos 3 puntos para desplazar un contorno")
+
+    flipped = signed_area(pts) < 0
+    if flipped:
+        pts.reverse()
+
+    edges: list[tuple[Point, Point]] = []
+    for index in range(len(pts)):
+        x0, y0 = pts[index]
+        x1, y1 = pts[(index + 1) % len(pts)]
+        dx, dy = x1 - x0, y1 - y0
+        length = math.hypot(dx, dy)
+        if length < 1e-12:
+            continue  # punto repetido: no define un lado
+        ux, uy = dx / length, dy / length
+        # Normal exterior de un polígono antihorario.
+        nx, ny = uy, -ux
+        edges.append(((x0 + nx * distance, y0 + ny * distance), (ux, uy)))
+
+    if len(edges) < 3:
+        raise ValueError("el contorno degeneró: no quedan 3 lados con longitud")
+
+    out: list[Point] = []
+    for index in range(len(edges)):
+        (px, py), (dx, dy) = edges[index - 1]
+        (qx, qy), (ex, ey) = edges[index]
+        cross = dx * ey - dy * ex
+        if abs(cross) < 1e-9:
+            out.append((qx, qy))  # lados paralelos: no hay vértice que cortar
+            continue
+        t = ((qx - px) * ey - (qy - py) * ex) / cross
+        out.append((px + dx * t, py + dy * t))
+
+    if flipped:
+        out.reverse()
+    return out
+
+
+def compensate(points: list[Point], *, kerf: float, role: str) -> list[Point]:
+    """Aplica el kerf a un contorno según su rol. Con kerf 0 no toca nada."""
+    if role not in ROLES:
+        raise ValueError(f"rol invalido: {role!r}. Opciones: {', '.join(ROLES)}")
+    if not kerf:
+        return list(points)
+    return offset_polygon(points, kerf / 2.0 if role == PART else -kerf / 2.0)
+
+
+# ------------------------------------------------------------------- arcos
+
+
+def arc_points(
+    cx: float, cy: float, radius: float, start: float, end: float, through: float,
+    *, max_segment_mm: float = 0.3,
+) -> list[Point]:
+    """Puntos de un arco de `start` a `end` (radianes) que pasa por `through`.
+
+    El tercer ángulo desempata el sentido de giro, que es la única parte de
+    dibujar un arco donde uno se equivoca en silencio y se entera cuando ve
+    la pieza cortada al revés.
+    """
+    two_pi = 2.0 * math.pi
+    sweep = (end - start) % two_pi              # barrido antihorario
+    offset = (through - start) % two_pi
+    if offset > sweep:                          # el punto testigo no cae adentro
+        sweep -= two_pi                         # entonces se gira al revés
+    steps = max(2, math.ceil(abs(sweep) * radius / max_segment_mm))
+    return [
+        (cx + radius * math.cos(start + sweep * i / steps),
+         cy + radius * math.sin(start + sweep * i / steps))
+        for i in range(steps + 1)
+    ]
+
+
+def notch(
+    x_center: float, y_open: float, y_root: float, width: float,
+    *, relief_diameter: float = 0.0, max_segment_mm: float = 0.3,
+) -> list[Point]:
+    """Muesca vertical abierta a un canto, con alivio circular en la raíz.
+
+    Devuelve los puntos desde el canto de un lado hasta el canto del otro,
+    para intercalar en el contorno de la pieza. `y_open` es el borde por donde
+    entra la otra pieza y `y_root` el fondo.
+
+    El alivio no es decoración. Hace dos cosas que se pagan caro sin él: saca
+    el esquinero interno vivo, que en MDF es por donde arranca la fisura, y le
+    da lugar al radio que el láser deja en la esquina de la otra pieza, para
+    que asiente hasta el fondo en vez de quedar trabada un milímetro antes.
+    """
+    half = width / 2.0
+    left, right = x_center - half, x_center + half
+    sign = 1.0 if y_root > y_open else -1.0
+    radius = relief_diameter / 2.0
+
+    if radius <= half + 1e-9:
+        # Sin alivio (o demasiado chico para asomar): esquina viva.
+        return [(left, y_open), (left, y_root), (right, y_root), (right, y_open)]
+
+    inset = math.sqrt(radius * radius - half * half)
+    y_meet = y_root - sign * inset
+    start = math.atan2(y_meet - y_root, left - x_center)
+    end = math.atan2(y_meet - y_root, right - x_center)
+    through = math.atan2(sign * radius, 0.0)
+
+    return (
+        [(left, y_open), (left, y_meet)]
+        + arc_points(x_center, y_root, radius, start, end, through,
+                     max_segment_mm=max_segment_mm)
+        + [(right, y_meet), (right, y_open)]
+    )

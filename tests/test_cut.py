@@ -15,10 +15,13 @@ from laserq.gcode.cut import (
     PART,
     Contour,
     CutOptions,
+    compensate,
     compensated_rect,
     cut_contours,
+    offset_polygon,
     order_contours,
     outline,
+    signed_area,
     slot,
 )
 from laserq.profiles import MaterialProfile
@@ -139,3 +142,42 @@ def test_el_perfil_del_material_trae_pasadas_y_kerf():
 
     assert (options.speed, options.power, options.passes) == (250, 1000, 4)
     assert options.kerf_mm == pytest.approx(0.18)
+
+
+# --------------------------------------------------- offset de polígonos
+
+
+def test_el_offset_general_coincide_con_el_de_rectangulos():
+    """Dos caminos al mismo número: si divergen, uno de los dos miente."""
+    rect = [(0, 0), (6, 0), (6, 30), (0, 30)]
+
+    for role in (HOLE, PART):
+        general = compensate(rect, kerf=0.25, role=role)
+        especifico = compensated_rect(0, 0, 6, 30, kerf=0.25, role=role)
+        for (ax, ay), (bx, by) in zip(general, especifico):
+            assert ax == pytest.approx(bx)
+            assert ay == pytest.approx(by)
+
+
+def test_el_offset_no_depende_del_sentido_de_giro():
+    """Un contorno dibujado al revés tiene que compensar para el mismo lado."""
+    horario = [(0, 30), (6, 30), (6, 0), (0, 0)]
+    antihorario = [(0, 0), (6, 0), (6, 30), (0, 30)]
+    assert signed_area(horario) < 0 < signed_area(antihorario)
+
+    def ancho(points):
+        xs = [x for x, _ in points]
+        return max(xs) - min(xs)
+
+    assert ancho(offset_polygon(horario, 0.125)) == pytest.approx(6.25)
+    assert ancho(offset_polygon(antihorario, 0.125)) == pytest.approx(6.25)
+
+
+def test_con_kerf_cero_el_contorno_no_se_toca():
+    rect = [(0, 0), (6, 0), (6, 30), (0, 30)]
+    assert compensate(rect, kerf=0.0, role=PART) == rect
+
+
+def test_un_contorno_de_dos_puntos_no_se_puede_desplazar():
+    with pytest.raises(ValueError, match="al menos 3 puntos"):
+        offset_polygon([(0, 0), (1, 1)], 0.1)

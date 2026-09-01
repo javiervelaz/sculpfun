@@ -9,6 +9,8 @@
     laserq focus-ramp                 genera la rampa de búsqueda de foco
     laserq cut-test                   placa de corte: pasadas x velocidad
     laserq kerf-comb -t 5.8           peine para medir el kerf del material
+    laserq soporte --nombre "Javi"    soporte de notebook, dos piezas encastradas
+    laserq letter-test                placa para calibrar el grabado de texto
     laserq raster foto.png -w 80      imagen -> G-code
     laserq rotary-info -d 80          números del rotativo para un objeto
     laserq preview archivo.gcode      dibuja el recorrido a PNG
@@ -25,7 +27,7 @@ import sys
 from pathlib import Path
 
 from .driver import Connection, ConnectionConfig, FakeConnection, Machine
-from .driver.machine import REQUIRED_SETTINGS, SETTING_NAMES
+from .driver.machine import SETTING_NAMES
 from .gcode.builder import measure
 from .jobs import HOME_POLICIES, Job, JobQueue, JobState, Worker
 from .profiles import list_materials, load_machine, load_material
@@ -188,6 +190,124 @@ def cmd_kerf_comb(args) -> int:
     print("probá la galga en cada ranura. La que entra con presión de mano y sin")
     print(f"juego es la buena, y ahí: kerf = {thickness:g} - ancho de esa ranura.")
     print("Ese número va a kerf_mm en el perfil del material.")
+    return 0
+
+
+def cmd_letter_test(args) -> int:
+    from .calibration import LetterTestSpec, build_letter_test
+
+    spec = LetterTestSpec()
+    etiqueta = args.material or ""
+    if args.material:
+        try:
+            perfil = load_material(args.material, args.profiles)
+        except FileNotFoundError:
+            perfil = None      # no es un perfil: se usa de etiqueta y listo
+        if perfil is not None:
+            etiqueta = perfil.material or perfil.name
+            spec.power = perfil.power
+            print(f"potencia del perfil {perfil.name}: S{spec.power}")
+
+    if args.texto:
+        spec.texto = args.texto
+    if args.grosores:
+        spec.grosores = [float(v) for v in args.grosores.split(",")]
+    if args.speeds:
+        spec.speeds = [int(v) for v in args.speeds.split(",")]
+    if args.power:
+        spec.power = args.power
+    if args.alto:
+        spec.alto_letra = args.alto
+
+    program = build_letter_test(spec, material=etiqueta)
+    width, height = spec.total_size
+    program.save(args.out)
+    print(f"{args.out}: {len(program)} líneas, placa de "
+          f"~{width + 30:.0f}x{height + 22:.0f} mm")
+    print(f"grosores {spec.grosores} x velocidades {spec.speeds} a S{spec.power}")
+    print()
+    print("Esta placa NO se deduce de la de relleno: un trazo suelto no tiene")
+    print("vecinos que lo oscurezcan, así que con los mismos F y S sale más claro.")
+    print("Elegí la celda que se lee de un metro con el trazo más fino que")
+    print("todavía se lee: la velocidad va al perfil de grabado y el grosor")
+    print("a `laserq soporte --grosor`.")
+    return 0
+
+
+def cmd_soporte(args) -> int:
+    from .gcode.cut import CutOptions
+    from .products import SoporteSpec, build_soporte, medidas
+
+    perfil = load_material(args.material, args.profiles)
+    if perfil.operation != "cut":
+        print(f"OJO: el perfil {perfil.name!r} es de {perfil.operation}, no de corte")
+    if not perfil.verified_on:
+        print(f"OJO: el perfil {perfil.name!r} está SIN VERIFICAR. Corré cut-test y")
+        print("kerf-comb antes de cortar algo que pensás vender.")
+
+    from .products.soporte import PRESETS
+
+    preset = PRESETS[args.preset]
+    options = CutOptions.from_profile(perfil)
+    spec = SoporteSpec(
+        ancho=args.ancho,
+        fondo=args.fondo if args.fondo is not None else preset["fondo"],
+        altura=args.altura if args.altura is not None else preset["altura"],
+        angulo=args.angulo if args.angulo is not None else preset["angulo"],
+        espesor=args.espesor if args.espesor else perfil.thickness_mm or 3.0,
+        kerf=args.kerf if args.kerf is not None else perfil.kerf_mm,
+        nombre=args.nombre or "",
+        nombre_lado=args.nombre_lado,
+        marca="" if args.sin_marca else args.marca,
+        grosor=args.grosor or 0.0,
+        pasa_cables=not args.sin_pasa_cables,
+    )
+
+    grabado_feed, grabado_power = 2500, 300
+    if args.grabado:
+        try:
+            grabado = load_material(args.grabado, args.profiles)
+        except FileNotFoundError:
+            print(f"no existe el perfil de grabado {args.grabado!r}, uso valores por defecto")
+        else:
+            grabado_feed, grabado_power = grabado.speed, grabado.power
+            if args.grosor is None:
+                spec.grosor = grabado.grosor_mm
+            estado = "" if grabado.verified_on else " (SIN VERIFICAR)"
+            print(f"grabado con {grabado.name}: F{grabado_feed} S{grabado_power} "
+                  f"grosor {spec.grosor:g}{estado}")
+            if not grabado.verified_on:
+                print("Corré `laserq letter-test` o el nombre va a salir casi invisible.")
+
+    try:
+        program = build_soporte(spec, options,
+                                grabado_feed=grabado_feed, grabado_power=grabado_power)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    info = medidas(spec, options)
+    program.save(args.out)
+
+    machine_profile = load_machine(args.profiles)
+    print(f"\n{args.out}: {len(program)} líneas  (preset {args.preset})")
+    print(f"pieza T {spec.ancho:g} x {spec.altura:g} · "
+          f"pieza L {spec.fondo:g} x {info.altura_frente:.1f}-{info.altura_fondo:.1f}")
+    print(f"ranura dibujada {info.ranura:g} mm "
+          f"(espesor {spec.espesor:g} - kerf {spec.kerf:g})")
+    if spec.nombre:
+        print(f"grabado {spec.nombre!r} a {info.grabado_alto:.1f} mm de alto, "
+              f"ala {spec.nombre_lado}, grosor {spec.grosor:g}")
+    print(f"plancha necesaria {info.plancha[0]:.0f} x {info.plancha[1]:.0f} mm", end="")
+    if not machine_profile.fits(*info.plancha):
+        print(f"  NO ENTRA en {machine_profile.work_area_mm}")
+    else:
+        print()
+    print(f"corte {info.corte_mm / 1000:.2f} m x{info.pasadas} pasadas "
+          f"= {info.minutos:.0f} min de máquina")
+
+    for aviso in info.avisos:
+        print(f"aviso: {aviso}")
     return 0
 
 
@@ -379,7 +499,8 @@ def cmd_materials(args) -> int:
         return 1
     for name in names:
         profile = load_material(name, args.profiles)
-        verified = f" (verificado {profile.verified_on})" if profile.verified_on else " (SIN VERIFICAR)"
+        verified = (f" (verificado {profile.verified_on})" if profile.verified_on
+                    else " (SIN VERIFICAR)")
         print(f"{name:<24} {profile.operation:<8} F{profile.speed:<6} S{profile.power:<5} "
               f"x{profile.passes}{verified}")
     return 0
@@ -459,6 +580,46 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--power", type=int, default=1000, help="si no usás un perfil")
     p.add_argument("--cut-passes", type=int, default=4, help="si no usás un perfil")
     p.set_defaults(func=cmd_kerf_comb)
+
+    p = sub.add_parser("soporte", help="soporte de notebook de dos piezas encastradas")
+    p.add_argument("-o", "--out", default="out/soporte.gcode")
+    p.add_argument("-m", "--material", default="mdf_3mm_corte",
+                   help="perfil de corte (de ahí salen espesor, kerf, velocidad y pasadas)")
+    p.add_argument("--preset", choices=["alto", "bajo"], default="alto",
+                   help="alto: para usar con teclado externo. "
+                        "bajo: para tipear en la notebook misma")
+    p.add_argument("--ancho", type=float, default=300.0, help="largo de la pieza transversal")
+    p.add_argument("--fondo", type=float, help="largo de la longitudinal (pisa el preset)")
+    p.add_argument("--altura", type=float, help="altura en el cruce (pisa el preset)")
+    p.add_argument("--angulo", type=float, help="inclinación del apoyo (pisa el preset)")
+    p.add_argument("--espesor", type=float,
+                   help="pisa el del perfil. Medilo si cambiaste de plancha")
+    p.add_argument("--kerf", type=float, help="pisa el del perfil")
+    p.add_argument("--nombre", help="texto grabado en la pieza transversal")
+    p.add_argument("--nombre-lado", choices=["izq", "der"], default="izq",
+                   help="en qué ala de la T va el nombre. En el medio queda "
+                        "tapado por la otra pieza")
+    p.add_argument("--grosor", type=float,
+                   help="pisa el grosor_mm del perfil de grabado. Ancho agregado "
+                        "al trazo en mm; medilo con `laserq letter-test`")
+    p.add_argument("--marca", default="CounterLabs", help="firma grabada en la longitudinal")
+    p.add_argument("--sin-marca", action="store_true")
+    p.add_argument("--sin-pasa-cables", action="store_true")
+    p.add_argument("--grabado", default="mdf_3mm_texto",
+                   help="perfil de TEXTO (velocidad y grosor). Ojo: no es el "
+                        "perfil de relleno, se miden distinto")
+    p.set_defaults(func=cmd_soporte)
+
+    p = sub.add_parser("letter-test", help="placa para calibrar el grabado de texto")
+    p.add_argument("-o", "--out", default="out/letter-test.gcode")
+    p.add_argument("-m", "--material",
+                   help="perfil (toma la potencia), o un texto para el encabezado")
+    p.add_argument("--texto", help="qué palabra grabar en cada celda")
+    p.add_argument("--alto", type=float, help="alto de la letra en mm")
+    p.add_argument("--grosores", help="filas, ej: 0,0.2,0.4,0.6")
+    p.add_argument("--speeds", help="columnas en mm/min, ej: 600,1000,1500,2500")
+    p.add_argument("--power", type=int, help="potencia fija (por defecto 500)")
+    p.set_defaults(func=cmd_letter_test)
 
     p = sub.add_parser("raster", help="imagen -> G-code")
     p.add_argument("image")

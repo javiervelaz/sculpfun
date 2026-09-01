@@ -114,11 +114,21 @@ def test_la_fuente_cubre_el_abecedario():
     assert unsupported("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") == []
 
 
-def test_normaliza_acentos_en_vez_de_fallar():
+def test_la_fuente_graba_enes_y_acentos():
+    """Un soporte personalizado que dice "PENA" en vez de "PEÑA" es basura."""
+    from laserq.gcode.font import glyph, normalize, unsupported
+    assert normalize("Martín") == "MARTÍN"
+    assert normalize("Muñoz") == "MUÑOZ"
+    assert unsupported("José Ñandú Güemes") == []
+    # la Ñ es la N más el trazo de la tilde, no un glifo suelto
+    assert len(glyph("Ñ")) == len(glyph("N")) + 1
+
+
+def test_un_diacritico_sin_glifo_se_descarta_en_vez_de_fallar():
+    """No tenemos cedilla. Mejor grabar FRANCAIS que dejar un hueco."""
     from laserq.gcode.font import normalize, unsupported
-    assert normalize("Martín") == "MARTIN"
-    assert normalize("Muñoz") == "MUNOZ"
-    assert unsupported("José Ñandú") == []
+    assert normalize("Français") == "FRANCAIS"
+    assert unsupported("Français") == []
 
 
 def test_avisa_de_caracteres_no_soportados():
@@ -132,3 +142,27 @@ def test_centrado_de_texto():
     centrado = text_polylines("ABC", 0.0, 0.0, 10.0, center=True)
     xs = [x for poli in centrado for x, _ in poli]
     assert min(xs) == pytest.approx(-ancho / 2, abs=0.01)
+
+
+def test_engrosar_repite_el_trazo_en_cruz():
+    """Una tipografía de trazo único deja un pelo del ancho del kerf."""
+    from laserq.gcode.font import thicken
+    trazo = [[(0.0, 0.0), (10.0, 0.0)]]
+
+    assert len(thicken(trazo, 0.0)) == 1
+
+    grueso = thicken(trazo, 0.3)
+    assert len(grueso) == 5          # el original más cuatro en cruz
+    ys = [y for polyline in grueso for _, y in polyline]
+    assert max(ys) - min(ys) == pytest.approx(0.3)
+
+
+def test_engrosar_saca_las_copias_de_un_trazo_juntas():
+    """Intercalarlas sería pagar un traslado por cada desplazamiento."""
+    from laserq.gcode.font import thicken
+    a, b = [(0.0, 0.0), (1.0, 0.0)], [(5.0, 5.0), (6.0, 5.0)]
+
+    grueso = thicken([a, b], 0.3)
+
+    assert all(p[0][0] < 2 for p in grueso[:5])
+    assert all(p[0][0] > 4 for p in grueso[5:])

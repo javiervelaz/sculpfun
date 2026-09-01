@@ -183,3 +183,4 @@ def build_focus_ramp(
 
     program.postamble()
     return program
+

@@ -1,10 +1,20 @@
-# PLANTILLA — los valores son un punto de partida razonable, NO están
-# verificados en tu máquina. Corré `laserq testcard` y reemplazalos.
+# VERIFICADO el 2026-09-01, leído de la placa `out/mdf.gcode`:
+# columna F5000 (velocidad), fila S600 (potencia).
+#
+# OJO CON EL ALCANCE: esto es para grabado de RELLENO — raster de fotos,
+# manchas, áreas llenas. En una celda rellena las líneas van a 0.1 mm y el
+# calor de una oscurece a la de al lado, así que estos valores se apoyan en
+# esa acumulación.
+#
+# NO sirven para texto de trazo. Un trazo suelto no tiene vecinos que lo
+# ayuden y con estos F y S sale casi invisible: son apenas 1.2x la energía
+# por milímetro de lo que ya venía usando el soporte. Para letras hay que
+# medir con `laserq letter-test`, que barre velocidad contra grosor.
 material: MDF crudo
 thickness_mm: 3.0
 operation: engrave
-speed: 3500
-power: 350
+speed: 5000
+power: 600
 passes: 1
 line_interval_mm: 0.1
 dither: jarvis
@@ -15,4 +25,4 @@ notes: >
   Punto de partida para grabado de fotos sobre MDF crudo. El MDF varía
   mucho entre lotes y hasta entre planchas: si cambiás de proveedor,
   rehacé la placa de test antes de una tirada grande.
-verified_on: ""
+verified_on: "2026-09-01"

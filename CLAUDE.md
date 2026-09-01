@@ -27,6 +27,9 @@ ruff check src/
 # CLI (real hardware)
 laserq status
 laserq raster image.png --material mdf_3mm_grabado
+laserq soporte --nombre "Javi"        # the first product
+laserq soporte --preset bajo          # low variant, for typing on the laptop
+laserq letter-test                    # lettering calibration (NOT the fill card)
 laserq cut-test -m mdf_3mm_corte      # defaults suit thin stock (1-4 passes)
 laserq kerf-comb -m mdf_3mm_corte -t 2.9   # -t is CALIPER-measured, not nominal
 laserq rotary-info -d 90 --diameter-end 70 -l 100
@@ -45,6 +48,20 @@ in 3mm MDF): `laserq cut-test` finds speed and pass count, then
 `laserq kerf-comb -t <measured thickness>` measures kerf. Both values go into
 the material profile; the generator compensates from there. The comb is cut
 **without** kerf compensation on purpose — it is what is being measured.
+
+**Lettering is calibrated separately from fill.** In a filled cell the heat of
+one scan line darkens its neighbour; a lone stroke has no neighbours, so the same
+F/S comes out much lighter. `laserq letter-test` measures speed x stroke weight
+for text; the fill card (`testcard`) does not transfer.
+
+**Engrave before cut, always.** A freshly cut piece is loose on the honeycomb;
+engraving after means moving the head over something that can shift. Generators
+emit all engraving before the first cut.
+
+**The font covers Ñ and accented vowels.** `normalize()` keeps any character that
+has a glyph and strips diacritics only from the ones that don't ("Français" →
+"FRANCAIS"). Engraving "PENA" instead of "PEÑA" on a personalised product is a
+scrapped piece, not a cosmetic issue.
 
 **Not implemented yet** (do not assume these exist): `laserq rotary` (raster
 onto a cone — the inverse mapping `ConeMapping.design_u()` is written but
@@ -77,6 +94,12 @@ Generators (laserq.gcode) → Queue (laserq.jobs) → Driver (laserq.driver) →
 - `queue.py`: SQLite persistence, states: PENDING → RUNNING → DONE/FAILED/CANCELLED
 - `worker.py`: Polls queue, executes with operator confirmation; decoupled from CLI so it can be HTTP-fronted later. `home_policy` is `"once"` (default) / `"each"` / `"never"` — see below
 
+**`laserq/products/`** — Parametric product generators
+- `soporte.py`: two-piece cross-lap laptop stand. Everything is drawn at **final
+  dimensions** and kerf is applied once at the end by offsetting the whole
+  material boundary outward — the perimeter grows and the notches narrow with the
+  same sign. Never pre-subtract the kerf when building geometry.
+
 **`profiles/`** — Versioned configuration (YAML, tracked in git)
 - `machine.yaml`: Port, work area, backlash, rotary roller diameter
 - `materials/*.yaml`: Speed, power, passes, DPI, dither algorithm, gamma — each with `verified_on` timestamp for calibration tracking
@@ -108,6 +131,6 @@ on. Never catch a streaming error and let the process exit without that stop.
 - Deduplicate F (feed) and S (power) commands to conserve GRBL's lookahead buffer
 - Backlash compensation happens at generator level (not firmware)
 
-**Testing:** All 86 tests run without hardware. `FakeConnection` replaces serial for full CLI integration testing.
+**Testing:** All 117 tests run without hardware. `FakeConnection` replaces serial for full CLI integration testing.
 
 **Material profiles** use `verified_on` timestamps so calibration history is tracked in git — don't hardcode material settings in source.

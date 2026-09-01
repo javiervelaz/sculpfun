@@ -32,27 +32,8 @@ from dataclasses import dataclass, field
 
 from ..gcode.builder import GcodeOptions, GcodeProgram
 from ..gcode.cut import Contour, CutOptions, cut_contours, outline, slot
-from ..gcode.font import text_polylines, text_width
-
-DEFAULT_LABEL_HEIGHT = 3.0
-DEFAULT_LABEL_POWER = 350
-DEFAULT_LABEL_SPEED = 2000
-
-
-def _engrave(
-    program: GcodeProgram,
-    text: str,
-    x: float,
-    y: float,
-    height: float = DEFAULT_LABEL_HEIGHT,
-    *,
-    power: int = DEFAULT_LABEL_POWER,
-    speed: int = DEFAULT_LABEL_SPEED,
-    center: bool = False,
-) -> None:
-    for polyline in text_polylines(text, x, y, height, center=center):
-        program.polyline(polyline, feed=speed, power=power)
-
+from ..gcode.font import text_width
+from .labels import DEFAULT_LABEL_HEIGHT, engrave_label
 
 # ------------------------------------------------------- placa de pasadas
 
@@ -128,19 +109,20 @@ def build_cut_test(spec: CutTestSpec, *, material: str = "") -> GcodeProgram:
         label = str(passes)
         y = origin_y + row * spec.pitch_y + (spec.line_mm - spec.label_height_mm) / 2
         x = origin_x - text_width(label, spec.label_height_mm) - 6.0
-        _engrave(program, label, x, y, spec.label_height_mm)
+        engrave_label(program, label, x, y, spec.label_height_mm)
 
     for col, speed in enumerate(spec.speeds):
         label = str(speed)
         x = origin_x + col * spec.pitch_x
         y = origin_y - spec.label_height_mm - 4.0
-        _engrave(program, label, x, y, spec.label_height_mm, center=True)
+        engrave_label(program, label, x, y, spec.label_height_mm, center=True)
 
-    _engrave(program, "PASADAS", origin_x - 16.0, origin_y + height + 5.0, spec.label_height_mm)
-    _engrave(program, f"S{spec.power}", origin_x + width - 8.0,
-             origin_y + height + 5.0, spec.label_height_mm)
-    _engrave(program, "F MM/MIN", origin_x + width - 10.0,
-             origin_y - spec.label_height_mm - 11.0, spec.label_height_mm)
+    engrave_label(program, "PASADAS", origin_x - 16.0, origin_y + height + 5.0,
+                  spec.label_height_mm)
+    engrave_label(program, f"S{spec.power}", origin_x + width - 8.0,
+                  origin_y + height + 5.0, spec.label_height_mm)
+    engrave_label(program, "F MM/MIN", origin_x + width - 10.0,
+                  origin_y - spec.label_height_mm - 11.0, spec.label_height_mm)
 
     program.postamble()
     return program
@@ -221,7 +203,8 @@ def build_kerf_comb(spec: KerfCombSpec, options: CutOptions) -> GcodeProgram:
                 f"({spec.slot_length_mm:g} mm) y no va a entrar de plano"
             )
         contours.append(outline(gauge_x, origin_y, gauge_w, gauge_h, kerf=0.0))
-        _engrave(program, "GALGA", gauge_x, origin_y + gauge_h + 4.0, spec.label_height_mm)
+        engrave_label(program, "GALGA", gauge_x, origin_y + gauge_h + 4.0,
+                      spec.label_height_mm)
 
     cut_contours(program, contours, options)
 
@@ -231,7 +214,7 @@ def build_kerf_comb(spec: KerfCombSpec, options: CutOptions) -> GcodeProgram:
         label = f"{width:.2f}"
         x = origin_x + index * spec.pitch_mm + width / 2
         y = origin_y - spec.label_height_mm - 4.0
-        _engrave(program, label, x, y, spec.label_height_mm, center=True)
+        engrave_label(program, label, x, y, spec.label_height_mm, center=True)
 
     program.postamble()
     return program

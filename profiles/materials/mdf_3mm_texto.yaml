@@ -1,0 +1,31 @@
+# VERIFICADO el 2026-09-01, leído de la placa de letras:
+# columna F1500 (velocidad), fila grosor 0.40.
+#
+# Este es el perfil de **texto de trazo**, que no es el mismo que el de
+# relleno (mdf_3mm_grabado, F5000 S600).
+#
+# Por qué existe aparte de mdf_3mm_grabado: en un relleno las líneas van a
+# 0.1 mm y el calor de una oscurece a la de al lado. Un trazo suelto no tiene
+# vecinos, así que necesita bastante más energía por milímetro para verse
+# igual. Copiar los valores del perfil de relleno acá es exactamente cómo se
+# consigue un nombre que no se lee.
+#
+# Energía por milímetro: 600/1500 = 0.40, o sea 4x la del perfil de relleno
+# (0.12) y 4x la que tenía el soporte cuando el nombre no se veía (0.10).
+# Esa diferencia es exactamente lo que un trazo suelto necesita para
+# compensar que no tiene vecinos que lo oscurezcan.
+#
+# Si cambiás de plancha o de lote, rehacé `laserq letter-test -m mdf_3mm_texto`.
+material: MDF crudo
+thickness_mm: 2.9
+operation: engrave
+speed: 1500              # columna de la placa de letras
+power: 600               # la misma que va bien en relleno
+passes: 1
+grosor_mm: 0.40          # fila de la placa de letras
+air_assist: true
+notes: >
+  Texto de trazo para el soporte de notebook. El grosor es tan importante
+  como la velocidad: la fuente es de trazo único y sin engrosar la letra
+  sale del ancho del kerf, se vea bien quemada o no.
+verified_on: "2026-09-01"

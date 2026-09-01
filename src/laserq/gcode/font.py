@@ -11,8 +11,15 @@ Para tipografías con peso, serifas o acentos hay que ir a una fuente real
 o convertir SVG; en ese caso lo que se reutiliza es el pipeline, no los
 glifos.
 
-Los acentos se descartan en lugar de fallar: "MARTÍN" se graba "MARTIN".
-Es preferible eso a un hueco en la pieza.
+Cubre además Ñ y las vocales acentuadas, que no son un lujo: un soporte
+personalizado que dice "PENA" en vez de "PEÑA" es una pieza tirada y un
+cliente enojado. Los diacríticos se dibujan por encima de la caja del
+glifo (hasta y = 1.26), así que una línea con acentos ocupa un poco más de
+alto que una sin ellos; el ancho no cambia.
+
+Un diacrítico que **no** tenemos —una cedilla, una diéresis sobre la i— se
+descarta en lugar de fallar: "Français" se graba "FRANCAIS". Es preferible
+eso a un hueco en la pieza.
 """
 
 from __future__ import annotations
@@ -105,15 +112,41 @@ GLYPHS: dict[str, list[Polyline]] = {
 
 
 def normalize(text: str) -> str:
-    """Pasa a mayúsculas y saca acentos y diacríticos.
+    """Pasa a mayúsculas y resuelve los diacríticos contra la fuente.
 
-    Descomponer y filtrar las marcas convierte "MARTÍN" en "MARTIN" y "ñ"
-    en "N". Se pierde el acento, pero se graba: en una pieza personalizada
-    es mucho peor un hueco donde iba una letra.
+    Lo que tiene glifo se conserva: "Martín" queda "MARTÍN" y se graba con
+    su tilde. Lo que no lo tiene se descompone y se le sacan las marcas,
+    así "Français" queda "FRANCAIS". Se pierde la cedilla, pero se graba:
+    en una pieza personalizada es mucho peor un hueco donde iba una letra.
     """
-    decomposed = unicodedata.normalize("NFD", text)
-    stripped = "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
-    return stripped.upper()
+    out = []
+    for char in text.upper():
+        if char in GLYPHS:
+            out.append(char)
+            continue
+        decomposed = unicodedata.normalize("NFD", char)
+        out.append("".join(c for c in decomposed if unicodedata.category(c) != "Mn"))
+    return "".join(out)
+
+
+#: Diacríticos, dibujados por encima de la caja del glifo. Van aparte y se
+#: componen con la letra base para no repetir veinte veces los mismos trazos.
+_ACUTE: list[Polyline] = [[(0.22, 1.12), (0.42, 1.26)]]
+_TILDE: list[Polyline] = [[(0.10, 1.15), (0.20, 1.24), (0.40, 1.13), (0.50, 1.22)]]
+_DIAERESIS: list[Polyline] = [[(0.16, 1.16), (0.25, 1.16)], [(0.35, 1.16), (0.44, 1.16)]]
+
+for _base, _mark, _accented in (
+    ("A", _ACUTE, "Á"),
+    ("E", _ACUTE, "É"),
+    ("I", _ACUTE, "Í"),
+    ("O", _ACUTE, "Ó"),
+    ("U", _ACUTE, "Ú"),
+    ("N", _TILDE, "Ñ"),
+    ("U", _DIAERESIS, "Ü"),
+):
+    GLYPHS[_accented] = [list(stroke) for stroke in GLYPHS[_base]] + \
+                        [list(stroke) for stroke in _mark]
+del _base, _mark, _accented
 
 
 def glyph(char: str) -> list[Polyline]:
@@ -158,4 +191,41 @@ def text_polylines(
         for polyline in glyph(char):
             out.append([(cursor + px * height, y + py * height) for px, py in polyline])
         cursor += step
+    return out
+
+
+#: Separación entre pasadas al engrosar un trazo. Menos que esto es tiempo
+#: de máquina sin ganancia visible; más deja el trazo rayado.
+PASO_GROSOR = 0.15
+
+
+def thicken(polylines: list[Polyline], grosor_mm: float,
+            *, paso: float = PASO_GROSOR) -> list[Polyline]:
+    """Repite cada trazo desplazado, para que la letra tenga cuerpo.
+
+    Una tipografía de trazo único deja una línea del ancho del kerf: a 12 mm
+    de alto eso se lee flaco aunque esté bien quemado. Repetir el mismo
+    recorrido corrido unas décimas en cruz le da ancho al trazo sin rellenar
+    contornos ni pasar a raster.
+
+    `grosor_mm` es el ancho **agregado**, aproximado: el ancho final incluye
+    además el kerf del láser. 0 devuelve el trazo pelado.
+
+    Las copias de un mismo trazo salen juntas y no intercaladas, para no
+    pagar un traslado por cada desplazamiento.
+    """
+    if grosor_mm <= 0:
+        return [list(trazo) for trazo in polylines]
+
+    anillos = max(1, round(grosor_mm / (2 * paso)))
+    offsets: list[tuple[float, float]] = [(0.0, 0.0)]
+    for indice in range(1, anillos + 1):
+        distancia = indice * paso
+        offsets += [(distancia, 0.0), (-distancia, 0.0),
+                    (0.0, distancia), (0.0, -distancia)]
+
+    out: list[Polyline] = []
+    for trazo in polylines:
+        for dx, dy in offsets:
+            out.append([(x + dx, y + dy) for x, y in trazo])
     return out
